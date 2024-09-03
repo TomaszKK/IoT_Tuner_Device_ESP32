@@ -42,6 +42,8 @@ size_t buffer_size = 1024 * 2;
 int16_t *buffer;
 bool isBufferFull = false;
 int nextBufferItem = 0;
+int threshold = 0;
+float accuracyTab[3];
 
 // Flag which will be set in ISR when conversion is done
 volatile bool adc_coversion_done = false;
@@ -167,8 +169,41 @@ void loop() {
         if(pitch == -1){
           pitch = 0;
         }
-        pCharacteristic->setValue(pitch);
-        pCharacteristic->notify();
+        // Zalezy co w momencie zmiany dzwieku czy nie bvedzie delaya
+        switch(threshold){
+          case 0:
+            if(pitch == 0){
+              pCharacteristic->setValue(pitch);
+              pCharacteristic->notify();
+              break;
+            }
+            accuracyTab[threshold] = pitch;
+            threshold++;
+            break;
+          case 1:
+            if(pitch != 0){
+              accuracyTab[threshold] = pitch;
+              threshold++;
+            }
+            else{
+              threshold = 0;
+              pCharacteristic->setValue(pitch);
+              pCharacteristic->notify();
+            }
+            break;
+          case 2:
+            if(pitch != 0){
+              accuracyTab[threshold] = pitch;
+              pitch = (accuracyTab[0] + accuracyTab[1] + accuracyTab[2]) / 3;
+              pCharacteristic->setValue(pitch);
+              pCharacteristic->notify();
+              threshold = 0;
+            }
+            break;
+        }
+
+        // pCharacteristic->setValue(pitch);
+        // pCharacteristic->notify();
     
         delay(5);
         analogContinuousStart();
