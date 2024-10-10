@@ -45,55 +45,6 @@ adc_oneshot_unit_handle_t adc1_handle;
 static bool example_adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t atten, adc_cali_handle_t *out_handle);
 static void example_adc_calibration_deinit(adc_cali_handle_t handle);
 
-float exponentialMovingAverageFilter(int newValue) {
-    filteredValue = alpha * newValue + (1 - alpha) * filteredValue;
-    return filteredValue;
-}
-
-
-// Setup BLE server callbacks
-class MyServerCallbacks : public BLEServerCallbacks {
-    void onConnect(BLEServer* pServer) {
-        deviceConnected = true;
-        // BLEDevice::stopAdvertising();
-        // (pServer->getAdvertising())->stop();
-    }
-
-    void onDisconnect(BLEServer* pServer) {
-        deviceConnected = false;
-        // BLEDevice::stopAdvertising();
-        // (pServer->getAdvertising())->stop();
-    }
-};
-
-float calculateAveragePitch() {
-    float sum = 0.0;
-    int count = 0;
-
-    // Iterate through the buffer and find values that occur multiple times within ±1 Hz
-    for (int i = 0; i < PITCH_BUFFER_SIZE; i++) {
-        if (pitchBuffer[i] > 0) {  // Exclude zeros
-            int occurrenceCount = 0;
-            float currentPitch = pitchBuffer[i];
-
-            // Check how many times the current pitch occurs within ±1 Hz in the buffer
-            for (int j = 0; j < PITCH_BUFFER_SIZE; j++) {
-                if (j != i && fabs(pitchBuffer[j] - currentPitch) <= 10.0) {
-                    occurrenceCount++;
-                }
-            }
-
-            // If the pitch occurs more than once, add it to the sum
-            if (occurrenceCount > 0) {  // Meaning it has at least one "close match"
-                sum += currentPitch;
-                count++;
-            }
-        }
-    }
-
-    // Return the average of the filtered values, or 0 if no valid values were found
-    return (count > 0) ? (sum / count) : 0;
-}
 
 static void check_efuse(void)
 {
@@ -121,27 +72,15 @@ static void check_efuse(void)
 #endif
 }
 
-// Function to read ADC data into the buffer
 void readData() {
-  // unsigned long startTime = millis();
-    // Read data from ADC until buffer is full
     while (nextBufferItem < BUFFER_SIZE) {
         buffer[nextBufferItem++] = (int16_t)adc1_get_raw((adc1_channel_t)channel);
-        // int adcAnalog;
-        // adc_oneshot_read(adc1_handle, ADC_CHANNEL_4, &adcAnalog);
-        // buffer[nextBufferItem++] = adcAnalog;
-        // Serial.printf("Buffer id: %d,   Analog: %d\n", nextBufferItem - 1, buffer[nextBufferItem - 1]);
-        // This delay allows for adjusting the sampling rate without blocking
         delayMicroseconds(1);
     }
 
-    // Indicate buffer is full
     if (nextBufferItem >= BUFFER_SIZE) {
         isBufferFull = true;
-    }
-
-    // unsigned long endTime = millis();
-    // Serial.printf("Time to read data 1111: %lu ms\n", endTime - startTime);
+    }    
 }
 
 void setup() {
@@ -150,24 +89,7 @@ void setup() {
     check_efuse();
     adc1_config_width(width);
     adc1_config_channel_atten(channel, atten);
-    // adc_power_acquire();
 
-    // adc_oneshot_unit_init_cfg_t init_config1 = {
-    //     .unit_id = ADC_UNIT_1,
-    // };
-    // ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
-
-    // //-------------ADC1 Config---------------//
-    // adc_oneshot_chan_cfg_t config = {
-    //   .atten = EXAMPLE_ADC_ATTEN,
-    //   .bitwidth = ADC_BITWIDTH_12,
-    // };
-    // ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_4, &config));
-
-    // adc_cali_handle_t adc1_cali_chan0_handle = NULL;
-    // bool do_calibration1_chan0 = example_adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_4, EXAMPLE_ADC_ATTEN, &adc1_cali_chan0_handle);
-
-    // Allocate memory for the buffer
     buffer = (int16_t*)malloc(BUFFER_SIZE * sizeof(int16_t));
     if (buffer == NULL) {
         Serial.print("Buffer allocation failed");
@@ -177,104 +99,32 @@ void setup() {
     // Initialize YIN pitch detection algorithm
     Yin_init(&yin, BUFFER_SIZE, 0.10);
 
-    // Create the BLE Device
-    BLEDevice::init(DEVICE_NAME);
 
-    // Create the BLE Server
-    pServer = BLEDevice::createServer();
-    pServer->setCallbacks(new MyServerCallbacks());
-
-    // Create the BLE Service
-    BLEService *pService = pServer->createService(SERVICE_UUID);
-
-    // Create a BLE Characteristic
-    pCharacteristic = pService->createCharacteristic(
-        CHARACTERISTIC_UUID,
-        BLECharacteristic::PROPERTY_NOTIFY |
-        BLECharacteristic::PROPERTY_INDICATE 
-    );
-  
-    // Add a BLE Descriptor
-    pCharacteristic->addDescriptor(new BLE2902());
-
-    // Start the service
-    pService->start();
-
-    // Start advertising
-    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-    pAdvertising->addServiceUUID(SERVICE_UUID);
-    pAdvertising->setScanResponse(false);
-    pAdvertising->setMinPreferred(0x0);  // Set value to 0x00 to not advertise this parameter
-    pAdvertising->setMinInterval(2000 * 2);  // Set lower frequency (in 0.625 ms units)
-    pAdvertising->setMaxInterval(2200 * 2);
-    pAdvertising->start();
 }
 
-unsigned long startTime = 0;
-unsigned long endTime = 0;
+
 
 void loop() {
-    // Check if device is connected
 
-    // if (deviceConnected) {
-        
-        // Disable BLE functionality while reading data
-        // Stop advertising
-        // endTime = millis();
-        // Serial.printf("Time to read data: %lu ms\n", endTime - startTime);
-        // startTime = millis();
-        // Read ADC data and wait for buffer to fill
         readData();
 
-        // Process pitch if buffer is full
         if (isBufferFull) {
-            // Reset buffer index and flag
+       
             nextBufferItem = 0;
             isBufferFull = false;
 
-            // Call the pitch detection algorithm with the filled buffer
             float pitch = Yin_getPitch(&yin, buffer);
-            pitch = pitch / 2;  // Adjust pitch as needed
-            Serial.printf("Pitch = %.1f Hz\n", pitch);  // Print pitch to Serial Monitor
+            pitch = pitch / 2; 
+            Serial.printf("Pitch = %.1f Hz\n", pitch); 
             
             if(pitch == -0.5){
               pitch = 0;
             }
 
-            pitchBuffer[bufferIndex] = pitch;
-            bufferIndex++;
-
-        
-            if (bufferIndex >= PITCH_BUFFER_SIZE) {
-              float avgPitch = calculateAveragePitch();
-              // Serial.printf("avg = %.1f Hz\n", avgPitch);
-              pCharacteristic->setValue(avgPitch);
-              pCharacteristic->notify();
-              delay(10);
-              bufferIndex = 0;
-            }
-            // BLEDevice::startAdvertising();
-            // pCharacteristic->setValue(pitch);
-            // // pCharacteristic->notify();
-            // pCharacteristic->notify();
+           
     
-            // Serial.printf("Time to read data: %lu ms\n", endTime - startTime);
-            // pServer->startAdvertising();  // Restart advertising
         }
-    // }
-
-    if (!deviceConnected && oldDeviceConnected) {
-        // delay(500); // give the bluetooth stack the chance to get things ready
-        pServer->startAdvertising(); // restart advertising
-        Serial.println("start advertising");
-        oldDeviceConnected = deviceConnected;
-    }
-
-    if (deviceConnected && !oldDeviceConnected) {
-        // do stuff here on connecting
-        oldDeviceConnected = deviceConnected;
-    }
-
+    
     delay(2);
 }
 
