@@ -112,7 +112,7 @@ class ServerCallbacks: public NimBLEServerCallbacks {
     void onConnect(NimBLEServer* pServer) {
         Serial.println("Client connected");
         // Serial.println("Multi-connect support: start advertising");
-        // NimBLEDevice::startAdvertising();
+        NimBLEDevice::startAdvertising();
     };
 
     void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) {
@@ -241,7 +241,7 @@ void setup() {
     Yin_init(&yin, BUFFER_SIZE, YIN_DEFAULT_THRESHOLD);
     
     /** sets device name */
-    NimBLEDevice::init("NimBLE-Arduino");
+    NimBLEDevice::init(DEVICE_NAME);
 
     /** Optional: set the transmit power, default is 3db */
     NimBLEDevice::setPower(ESP_PWR_LVL_N0); /** +9db */
@@ -266,9 +266,9 @@ void setup() {
     pServer = NimBLEDevice::createServer();
     pServer->setCallbacks(new ServerCallbacks());
 
-    NimBLEService* pBaadService = pServer->createService("BAAD");
+    NimBLEService* pBaadService = pServer->createService(SERVICE_UUID);
     NimBLECharacteristic* pFoodCharacteristic = pBaadService->createCharacteristic(
-                                               "F00D",
+                                               CHARACTERISTIC_UUID,
                                                NIMBLE_PROPERTY::NOTIFY
                                               );
 
@@ -293,7 +293,7 @@ void setup() {
     pAdvertising->setMinInterval(100);
     // pAdvertising->addTxPower();
 
-    pAdvertising->setScanResponse(false);
+    pAdvertising->setScanResponse(true);
     pAdvertising->start();
 
     Serial.println("Advertising Started");
@@ -315,28 +315,30 @@ void loop() {
         pitch = 0;
       }
 
-      pitchBuffer[bufferIndex] = pitch;
-      bufferIndex++;
+      // pitchBuffer[bufferIndex] = pitch;
+      // bufferIndex++;
 
-      if (bufferIndex >= PITCH_BUFFER_SIZE) {
-        float avgPitch = calculateAveragePitch();
+      // if (bufferIndex >= PITCH_BUFFER_SIZE) {
+      //   float avgPitch = calculateAveragePitch();
         
-        bufferIndex = 0;
+      //   bufferIndex = 0;
 
-        char pitchStr[10]; 
-        snprintf(pitchStr, sizeof(pitchStr), "%.1f", avgPitch);  
+        // char pitchStr[10]; 
+        // snprintf(pitchStr, sizeof(pitchStr), "%.1f", pitch);  
+        uint8_t pitchBytes[sizeof(float)];
+        memcpy(pitchBytes, &pitch, sizeof(float));
 
-        NimBLEService* pSvc = pServer->getServiceByUUID("BAAD");
+        NimBLEService* pSvc = pServer->getServiceByUUID(SERVICE_UUID);
         if(pSvc) {
-          NimBLECharacteristic* pChr = pSvc->getCharacteristic("F00D");
+          NimBLECharacteristic* pChr = pSvc->getCharacteristic(CHARACTERISTIC_UUID);
             if(pChr) {
-              Serial.printf("Pitch = %.1f Hz\n", avgPitch); 
-              pChr->setValue(pitchStr);
+              Serial.printf("Pitch = %.1f Hz\n", pitch); 
+              pChr->setValue(pitchBytes, sizeof(float));
               pChr->notify();
               delay(20);
             }
         }
-      }
+      
     }
   }
   delay(2);
