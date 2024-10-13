@@ -29,7 +29,7 @@ bool isBufferFull = false;
 int nextBufferItem = 0;
 float pitchBuffer[PITCH_BUFFER_SIZE] = {0};  // Initialize with zeros
 int bufferIndex = 0;
-float alpha = 0.1;  // Smoothing factor, adjust between 0.0 (very smooth) and 1.0 (no smoothing)
+float alpha = 0.15;  // Smoothing factor, adjust between 0.0 (very smooth) and 1.0 (no smoothing)
 float filteredValue = 0;
 
 static NimBLEServer* pServer;
@@ -73,27 +73,15 @@ float calculateAveragePitch() {
 
     // Iterate through the buffer and find values that occur multiple times within ±1 Hz
     for (int i = 0; i < PITCH_BUFFER_SIZE; i++) {
-        if (pitchBuffer[i] > 0) {  // Exclude zeros
-            int occurrenceCount = 0;
-            float currentPitch = pitchBuffer[i];
-
-            // Check how many times the current pitch occurs within ±1 Hz in the buffer
-            for (int j = 0; j < PITCH_BUFFER_SIZE; j++) {
-                if (j != i && fabs(pitchBuffer[j] - currentPitch) <= 10.0) {
-                    occurrenceCount++;
-                }
-            }
-
-            // If the pitch occurs more than once, add it to the sum
-            if (occurrenceCount > 0) {  // Meaning it has at least one "close match"
-                sum += currentPitch;
-                count++;
-            }
-        }
+      if (pitchBuffer[i] > 0) {  // Exclude zeros
+        float currentPitch = pitchBuffer[i];            
+        sum += currentPitch;
+        count++;
+      }
     }
 
-    // Return the average of the filtered values, or 0 if no valid values were found
-    return (count > 0) ? (sum / count) : 0;
+  // Return the average of the filtered values, or 0 if no valid values were found
+  return (count > 0) ? (sum / count) : 0;
 }
 
 void readData() {
@@ -125,7 +113,7 @@ class ServerCallbacks: public NimBLEServerCallbacks {
          *  Latency: number of intervals allowed to skip.
          *  Timeout: 10 millisecond increments, try for 5x interval time for best results.
          */
-        pServer->updateConnParams(desc->conn_handle, 6, 6, 0, 10);
+        pServer->updateConnParams(desc->conn_handle, 6, 6, 0, 500);
     };
 
     void onDisconnect(NimBLEServer* pServer) {
@@ -292,7 +280,9 @@ void setup() {
     pAdvertising->setMaxInterval(100);
     pAdvertising->setMinInterval(100);
     // pAdvertising->addTxPower();
-
+    
+    std::string macAddress = NimBLEDevice::getAddress().toString();
+    pAdvertising->setManufacturerData(macAddress);
     pAdvertising->setScanResponse(true);
     pAdvertising->start();
 
@@ -338,7 +328,7 @@ void loop() {
               delay(20);
             }
         }
-      
+      // }
     }
   }
   delay(2);
