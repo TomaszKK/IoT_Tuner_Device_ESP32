@@ -8,7 +8,7 @@ extern "C" {
 #include <stdint.h>
 
 #define YIN_SAMPLING_RATE 44000
-#define YIN_DEFAULT_THRESHOLD 0.15
+#define YIN_DEFAULT_THRESHOLD 0.10
 
 typedef struct _Yin {
     int16_t bufferSize;
