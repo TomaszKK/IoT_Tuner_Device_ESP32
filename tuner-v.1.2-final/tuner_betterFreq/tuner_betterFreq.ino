@@ -13,7 +13,7 @@
 #define DEVICE_NAME         "TUNER IOT"
 #define PIN 32              
 #define BUFFER_SIZE 1024 * 2
-#define PITCH_BUFFER_SIZE 2
+#define PITCH_BUFFER_SIZE 4
 
 #define EXAMPLE_ADC_ATTEN           ADC_ATTEN_DB_12
 
@@ -71,14 +71,26 @@ float calculateAveragePitch() {
     float sum = 0.0;
     int count = 0;
 
-    // Iterate through the buffer and find values that occur multiple times within ±1 Hz
-    for (int i = 0; i < PITCH_BUFFER_SIZE; i++) {
-      if (pitchBuffer[i] > 0) {  // Exclude zeros
-        float currentPitch = pitchBuffer[i];            
-        sum += currentPitch;
-        count++;
-      }
+   for (int i = 0; i < PITCH_BUFFER_SIZE; i++) {
+        if (pitchBuffer[i] > 0) {  // Exclude zeros
+            int occurrenceCount = 0;
+            float currentPitch = pitchBuffer[i];
+
+            // Check how many times the current pitch occurs within ±1 Hz in the buffer
+            for (int j = 0; j < PITCH_BUFFER_SIZE; j++) {
+                if (j != i && fabs(pitchBuffer[j] - currentPitch) <= 3.0) {
+                    occurrenceCount++;
+                }
+            }
+
+            // If the pitch occurs more than once, add it to the sum
+            if (occurrenceCount > 0) {  // Meaning it has at least one "close match"
+                sum += currentPitch;
+                count++;
+            }
+        }
     }
+
 
   // Return the average of the filtered values, or 0 if no valid values were found
   return (count > 0) ? (sum / count) : 0;
@@ -113,7 +125,7 @@ class ServerCallbacks: public NimBLEServerCallbacks {
          *  Latency: number of intervals allowed to skip.
          *  Timeout: 10 millisecond increments, try for 5x interval time for best results.
          */
-        pServer->updateConnParams(desc->conn_handle, 6, 6, 0, 500);
+        pServer->updateConnParams(desc->conn_handle, 6, 6, 0, 10);
     };
 
     void onDisconnect(NimBLEServer* pServer) {
@@ -232,7 +244,7 @@ void setup() {
     NimBLEDevice::init(DEVICE_NAME);
 
     /** Optional: set the transmit power, default is 3db */
-    NimBLEDevice::setPower(ESP_PWR_LVL_N0); /** +9db */
+    NimBLEDevice::setPower(ESP_PWR_LVL_N12); /** +9db */
 
 
     /** Set the IO capabilities of the device, each option will trigger a different pairing method.
@@ -305,32 +317,32 @@ void loop() {
         pitch = 0;
       }
 
-      // pitchBuffer[bufferIndex] = pitch;
-      // bufferIndex++;
+      pitchBuffer[bufferIndex] = pitch;
+      bufferIndex++;
 
-      // if (bufferIndex >= PITCH_BUFFER_SIZE) {
-      //   float avgPitch = calculateAveragePitch();
+      if (bufferIndex >= PITCH_BUFFER_SIZE) {
+        float avgPitch = calculateAveragePitch();
         
-      //   bufferIndex = 0;
+        bufferIndex = 0;
 
         // char pitchStr[10]; 
         // snprintf(pitchStr, sizeof(pitchStr), "%.1f", pitch);  
         uint8_t pitchBytes[sizeof(float)];
-        memcpy(pitchBytes, &pitch, sizeof(float));
+        memcpy(pitchBytes, &avgPitch, sizeof(float));
 
         NimBLEService* pSvc = pServer->getServiceByUUID(SERVICE_UUID);
         if(pSvc) {
           NimBLECharacteristic* pChr = pSvc->getCharacteristic(CHARACTERISTIC_UUID);
             if(pChr) {
-              Serial.printf("Pitch = %.1f Hz\n", pitch); 
+              Serial.printf("Pitch = %.1f Hz\n", avgPitch); 
               pChr->setValue(pitchBytes, sizeof(float));
               pChr->notify();
-              delay(20);
+              delay(10);
             }
         }
-      // }
+      }
     }
   }
-  delay(2);
+  delay(1);
 }
 
