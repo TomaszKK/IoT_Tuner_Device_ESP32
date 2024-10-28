@@ -11,9 +11,9 @@
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 #define DEVICE_NAME         "TUNER IOT"
-#define PIN 32              
+#define PIN 32             
 #define BUFFER_SIZE 1024 * 2
-#define PITCH_BUFFER_SIZE 4
+#define PITCH_BUFFER_SIZE 1
 
 #define EXAMPLE_ADC_ATTEN           ADC_ATTEN_DB_12
 
@@ -100,6 +100,7 @@ void readData() {
     while (nextBufferItem < BUFFER_SIZE) {
         buffer[nextBufferItem++] = exponentialMovingAverageFilter((int16_t)adc1_get_raw((adc1_channel_t)channel));
         // buffer[nextBufferItem++] = (int16_t)adc1_get_raw((adc1_channel_t)channel);
+        // Serial.println(buffer[nextBufferItem-1]);
         delayMicroseconds(2);
     }
 
@@ -317,30 +318,30 @@ void loop() {
         pitch = 0;
       }
 
-      pitchBuffer[bufferIndex] = pitch;
-      bufferIndex++;
+      // pitchBuffer[bufferIndex] = pitch;
+      // bufferIndex++;
 
-      if (bufferIndex >= PITCH_BUFFER_SIZE) {
-        float avgPitch = calculateAveragePitch();
+      // if (bufferIndex >= PITCH_BUFFER_SIZE) {
+      //   float avgPitch = calculateAveragePitch();
         
-        bufferIndex = 0;
+      //   bufferIndex = 0;
 
         // char pitchStr[10]; 
         // snprintf(pitchStr, sizeof(pitchStr), "%.1f", pitch);  
         uint8_t pitchBytes[sizeof(float)];
-        memcpy(pitchBytes, &avgPitch, sizeof(float));
+        memcpy(pitchBytes, &pitch, sizeof(float));
 
         NimBLEService* pSvc = pServer->getServiceByUUID(SERVICE_UUID);
         if(pSvc) {
           NimBLECharacteristic* pChr = pSvc->getCharacteristic(CHARACTERISTIC_UUID);
             if(pChr) {
-              Serial.printf("Pitch = %.1f Hz\n", avgPitch); 
+              Serial.printf("Pitch = %.1f Hz\n", pitch); 
               pChr->setValue(pitchBytes, sizeof(float));
               pChr->notify();
               delay(10);
             }
         }
-      }
+      // }
     }
   }
   delay(1);
