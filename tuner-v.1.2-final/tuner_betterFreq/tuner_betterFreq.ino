@@ -10,7 +10,7 @@
 
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-#define DEVICE_NAME         "TUNER IOT"
+#define DEVICE_NAME         "TUNER HRT-1"
 #define PIN 32             
 #define BUFFER_SIZE 1024 * 2
 #define PITCH_BUFFER_SIZE 1
@@ -126,6 +126,11 @@ class ServerCallbacks: public NimBLEServerCallbacks {
          *  Latency: number of intervals allowed to skip.
          *  Timeout: 10 millisecond increments, try for 5x interval time for best results.
          */
+        Serial.print("Interval: ");
+        Serial.println(desc->conn_itvl * 1.25);
+        Serial.print("Latency: ");
+         Serial.println(desc->conn_latency);
+    
         pServer->updateConnParams(desc->conn_handle, 6, 6, 0, 10);
     };
 
@@ -135,6 +140,7 @@ class ServerCallbacks: public NimBLEServerCallbacks {
     };
 
     void onMTUChange(uint16_t MTU, ble_gap_conn_desc* desc) {
+        pServer->updateConnParams(desc->conn_handle, 6, 6, 0, 10);
         Serial.printf("MTU updated: %u for connection ID: %u\n", MTU, desc->conn_handle);
     };
 
@@ -161,6 +167,7 @@ class ServerCallbacks: public NimBLEServerCallbacks {
         }
         Serial.println("Starting BLE work!");
     };
+
 };
 
 class CharacteristicCallbacks: public NimBLECharacteristicCallbacks {
@@ -246,6 +253,7 @@ void setup() {
 
     /** Optional: set the transmit power, default is 3db */
     NimBLEDevice::setPower(ESP_PWR_LVL_N12); /** +9db */
+    NimBLEDevice::setMTU(128);
 
 
     /** Set the IO capabilities of the device, each option will trigger a different pairing method.
@@ -275,23 +283,14 @@ void setup() {
 
     pFoodCharacteristic->setValue("Fries");
     pFoodCharacteristic->setCallbacks(&chrCallbacks);
-
-    // NimBLEDescriptor* pC01Ddsc = pFoodCharacteristic->createDescriptor(
-    //                                            "C01D",
-    //                                            NIMBLE_PROPERTY::READ |
-    //                                            NIMBLE_PROPERTY::WRITE|
-    //                                            NIMBLE_PROPERTY::WRITE_ENC, // only allow writing if paired / encrypted
-    //                                            20
-    //                                           );
-    // pC01Ddsc->setValue("Send it back!");
-    // pC01Ddsc->setCallbacks(&dscCallbacks);
-
     pBaadService->start();
 
     NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(pBaadService->getUUID());
     pAdvertising->setMaxInterval(100);
     pAdvertising->setMinInterval(100);
+    // pAdvertising->setMaxPreferred(12);
+    // pAdvertising->setMinPreferred(12);
     // pAdvertising->addTxPower();
     
     std::string macAddress = NimBLEDevice::getAddress().toString();
