@@ -1,6 +1,6 @@
 #include <stdint.h> /* For standard interger types (int16_t) */
 #include <stdlib.h> /* For call to malloc */
-#include "yinacf.h"
+#include "yin.h"
 
 const static char *TAG = "EXAMPLE";
 /* ------------------------------------------------------------------------------------------
