@@ -26,8 +26,8 @@ void BLEHandler::startAdvertising() {
   NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(pService->getUUID());
 
-  pAdvertising->setMaxInterval(100);
-  pAdvertising->setMinInterval(100);
+  pAdvertising->setMaxInterval(12);
+  pAdvertising->setMinInterval(12);
   // pAdvertising->setMaxPreferred(12);
   // pAdvertising->setMinPreferred(12);
   // pAdvertising->addTxPower();

@@ -111,7 +111,6 @@ void loop() {
       isBufferFull = false;
 
       float pitch = Yin_getPitch(&yin, buffer);
-      pitch = pitch;
 
       if (pitch < 0) {
         pitch = 0;
