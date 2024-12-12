@@ -1,27 +1,20 @@
 #include "yin.h"
 #include "BLEHandler.h"
 #include "driver/gpio.h"
-#include "driver/adc.h"
-#include "esp_private/adc_share_hw_ctrl.h"
-#include "esp_adc_cal.h"
-#include "esp_adc/adc_oneshot.h"
-#include "esp_adc/adc_cali.h"
-#include "esp_adc/adc_cali_scheme.h"
-// #include <NimBLEDevice.h>
+#include "esp_adc/adc_continuous.h"
+
+#include <NimBLEDevice.h>
 
 #define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 #define DEVICE_NAME "TUNER HRT-1"
 #define PIN 32
-#define BUFFER_SIZE 2048
+#define BUFFER_SIZE 2048 * 2
 
 #define EXAMPLE_ADC_ATTEN ADC_ATTEN_DB_12
-
-static adc1_channel_t channel = ADC1_CHANNEL_4;
-static const adc_bits_width_t width = ADC_WIDTH_BIT_12;
-static const adc_atten_t atten = ADC_ATTEN_DB_12;
-static const adc_unit_t unit = ADC_UNIT_1;
-adc_oneshot_unit_handle_t adc1_handle;
+#define EXAMPLE_ADC_UNIT ADC_UNIT_1
+#define EXAMPLE_READ_LEN 2048 * 8
+#define SAMPLE_FREQUENCY_HZ  107800
 
 BLEHandler* bleHandler;
 Yin yin;
@@ -29,64 +22,105 @@ Yin yin;
 int16_t* buffer;
 bool isBufferFull = false;
 int nextBufferItem = 0;
-float alpha = 0.15;  
+float alpha = 0.15;
 float filteredValue = 0;
 int checkPitch = 0;
 
+static TaskHandle_t s_task_handle;
+static const char* TAG = "ADC_CONTINUOUS";
+adc_continuous_handle_t handle = NULL;
 
-static void check_efuse(void) {
-#if CONFIG_IDF_TARGET_ESP32
-  //Check if TP is burned into eFuse
-  if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_TP) == ESP_OK) {
-    printf("eFuse Two Point: Supported\n");
-  } else {
-    printf("eFuse Two Point: NOT supported\n");
-  }
-  //Check Vref is burned into eFuse
-  if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_VREF) == ESP_OK) {
-    printf("eFuse Vref: Supported\n");
-  } else {
-    printf("eFuse Vref: NOT supported\n");
-  }
-#elif CONFIG_IDF_TARGET_ESP32S2
-  if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_TP) == ESP_OK) {
-    printf("eFuse Two Point: Supported\n");
-  } else {
-    printf("Cannot retrieve eFuse Two Point calibration values. Default calibration values will be used.\n");
-  }
-#else
-#error "This example is configured for ESP32/ESP32S2."
-#endif
-}
 
 float exponentialMovingAverageFilter(int newValue) {
   filteredValue = alpha * newValue + (1 - alpha) * filteredValue;
   return filteredValue;
 }
 
+static bool IRAM_ATTR adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t* edata, void* user_data) {
+  BaseType_t mustYield = pdFALSE;
+  vTaskNotifyGiveFromISR(s_task_handle, &mustYield);
+  return (mustYield == pdTRUE);
+}
+
+
+void continuous_adc_init() {
+  adc_continuous_handle_cfg_t adc_config = {
+    .max_store_buf_size = EXAMPLE_READ_LEN,
+    .conv_frame_size = EXAMPLE_READ_LEN,
+  };
+  ESP_ERROR_CHECK(adc_continuous_new_handle(&adc_config, &handle));
+
+  adc_continuous_config_t dig_cfg = {
+    .sample_freq_hz = SAMPLE_FREQUENCY_HZ,
+    .conv_mode = ADC_CONV_SINGLE_UNIT_1,
+    .format = ADC_DIGI_OUTPUT_FORMAT_TYPE1,
+  };
+
+  adc_digi_pattern_config_t adc_pattern[1] = {
+    { .atten = EXAMPLE_ADC_ATTEN,
+      .channel = ADC_CHANNEL_4,
+      .unit = EXAMPLE_ADC_UNIT,
+      .bit_width = SOC_ADC_DIGI_MAX_BITWIDTH }
+  };
+
+  dig_cfg.pattern_num = 1;
+  dig_cfg.adc_pattern = adc_pattern;
+
+  ESP_ERROR_CHECK(adc_continuous_config(handle, &dig_cfg));
+
+  adc_continuous_evt_cbs_t cbs = {
+    .on_conv_done = adc_conv_done_cb,
+  };
+  ESP_ERROR_CHECK(adc_continuous_register_event_callbacks(handle, &cbs, NULL));
+  ESP_ERROR_CHECK(adc_continuous_start(handle));
+}
 
 void readData() {
+  esp_err_t ret;
+  uint32_t ret_num = 0;
+  uint8_t* result = NULL;
+  result = (uint8_t*)malloc(EXAMPLE_READ_LEN * sizeof(uint8_t));
+
+  if (result == NULL) {
+    Serial.println("Memory allocation for result buffer failed");
+    return;  // Exit if memory allocation fails
+  }
+
+
+  ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
   while (nextBufferItem < BUFFER_SIZE) {
-    // buffer[nextBufferItem++] = exponentialMovingAverageFilter((int16_t)adc1_get_raw((adc1_channel_t)channel));
-    buffer[nextBufferItem++] = (int16_t)adc1_get_raw((adc1_channel_t)channel);
-    // Serial.println(buffer[nextBufferItem-1]);
-
-    delayMicroseconds(2);
+    ret = adc_continuous_read(handle, result, EXAMPLE_READ_LEN, &ret_num, 0);
+    // Serial.println(ret_num);
+    // Serial.println("......................");
+    if (ret == ESP_OK) {
+      for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_RESULT_BYTES * 2) {
+        adc_digi_output_data_t* p = (adc_digi_output_data_t*)&result[i];
+        uint32_t data = exponentialMovingAverageFilter(p->type1.data);
+        buffer[nextBufferItem++] = (int16_t)data;
+        // Serial.println(data);
+        
+        if (nextBufferItem >= BUFFER_SIZE) {
+          isBufferFull = true;
+          // Serial.println("Break for");
+          break;
+        }
+      }
+    } else if (ret == ESP_ERR_TIMEOUT) {
+      // Serial.println("Break read");
+      break;
+    }
+    // Serial.println("While end");
   }
+  
+  free(result);
 
-  if (nextBufferItem >= BUFFER_SIZE) {
-    isBufferFull = true;
-  }
 }
 
 
 void setup() {
   Serial.begin(115200);
   Serial.println("Starting NimBLE Server");
-
-  check_efuse();
-  adc1_config_width(width);
-  adc1_config_channel_atten(channel, atten);
 
   buffer = (int16_t*)malloc(BUFFER_SIZE * sizeof(int16_t));
   if (buffer == NULL) {
@@ -96,6 +130,9 @@ void setup() {
 
   // Initialize YIN pitch detection algorithm
   Yin_init(&yin, BUFFER_SIZE, YIN_DEFAULT_THRESHOLD);
+
+  continuous_adc_init();
+  s_task_handle = xTaskGetCurrentTaskHandle();
 
   bleHandler = new BLEHandler(DEVICE_NAME, SERVICE_UUID, CHARACTERISTIC_UUID);
   bleHandler->init();
@@ -111,7 +148,7 @@ void loop() {
       isBufferFull = false;
 
       float pitch = Yin_getPitch(&yin, buffer);
-
+      // Serial.printf("Pitch = %.1f Hz\n", pitch);
       if (pitch < 0) {
         pitch = 0;
         checkPitch++;
@@ -120,9 +157,9 @@ void loop() {
       }
 
       if (checkPitch < 3) {
-        Serial.printf("Pitch = %.1f Hz\n", pitch);
+        Serial.printf("Pitch = %.2f Hz\n", pitch);
         bleHandler->notifyPitch(pitch);
-        delay(10);
+        delay(20);
       }
     }
   }
