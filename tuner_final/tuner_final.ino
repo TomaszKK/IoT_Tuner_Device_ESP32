@@ -156,7 +156,7 @@ void loop() {
         checkPitch = 0;
       }
 
-      if (checkPitch < 3) {
+      if (checkPitch < 5) {
         Serial.printf("Pitch = %.2f Hz\n", pitch);
         bleHandler->notifyPitch(pitch);
         delay(20);
